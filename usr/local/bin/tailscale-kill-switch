@@ -82,4 +82,7 @@ case "$1" in
         apply_rules
         update
         ;;
+    *)
+        echo "USAGE: $0 (start|stop|update|reload)"
+        ;;
 esac
