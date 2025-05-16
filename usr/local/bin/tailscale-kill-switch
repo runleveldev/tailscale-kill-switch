@@ -1,0 +1,85 @@
+#!/bin/bash
+
+set -e
+
+update_control_plane_ips () {
+    local control_plane_hosts=(
+        login.tailscale.com
+        controlplane.tailscale.com
+        log.tailscale.com
+        log.tailscale.io
+    )
+    local tmp="tmp-$RANDOM"
+    ipset create "$tmp" hash:ip -exist
+    ipset flush "$tmp"
+    for host in "${control_plane_hosts[@]}"; do
+        dig +short "$host" | while read -r ip; do
+            ipset add "$tmp" "$ip" -exist
+        done
+    done
+    ipset swap "$tmp" tailscale-control
+    ipset destroy "$tmp"
+}
+
+update_derp_ips () {
+    local tmp="tmp-$RANDOM"
+    ipset create "$tmp" hash:ip -exist
+    ipset flush "$tmp"
+    curl -s https://login.tailscale.com/derpmap/default \
+    | jq -r '.Regions[] | .Nodes[] | .IPv4' \
+    | while read -r ip; do
+        ipset add "$tmp" "$ip" -exist
+    done
+    ipset swap "$tmp" tailscale-derp
+    ipset destroy "$tmp"
+}
+
+update () {
+    update_control_plane_ips
+    update_derp_ips
+}
+
+apply_rules () {
+    ipset create tailscale-control hash:ip
+    ipset create tailscale-derp hash:ip
+    iptables -N KILL-SWITCH || iptables -F KILL-SWITCH
+    iptables -A KILL-SWITCH -d 192.168.1.0/24 -j ACCEPT
+    iptables -A KILL-SWITCH -p tcp --dport 443 -m set --match-set tailscale-control dst -j ACCEPT
+    iptables -A KILL-SWITCH -p tcp --dport 443 -m set --match-set tailscale-derp dst -j ACCEPT
+    iptables -A KILL-SWITCH -p udp --dport 3478 -j ACCEPT
+    iptables -A KILL-SWITCH -p udp --sport 41641 -j ACCEPT
+    iptables -A KILL-SWITCH -j DROP
+    iptables -I OUTPUT -o eth0 -j KILL-SWITCH
+    iptables -I FORWARD -o eth0 -j KILL-SWITCH
+}
+
+remove () {
+    iptables -S \
+    | grep -- '-j KILL-SWITCH' \
+    | sed -e 's/^-A/-D/' \
+    | while read -r rule; do
+        iptables $rule
+    done
+    iptables -F KILL-SWITCH
+    iptables -X KILL-SWITCH
+    ipset destroy tailscale-control
+    ipset destroy tailscale-derp
+}
+
+case "$1" in
+    start)
+        apply_rules
+        update
+        ;;
+    update)
+        update
+        ;;
+    stop)
+        remove
+        ;;
+    reload)
+        remove
+        apply_rules
+        update
+        ;;
+esac

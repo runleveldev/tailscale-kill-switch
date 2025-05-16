@@ -1,0 +1,14 @@
+[Unit]
+Description=IPv4 Tailscale Kill Switch
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/tailscale-kill-switch start
+ExecReload=/usr/local/bin/tailscale-kill-switch reload
+ExecStop=/usr/local/bin/tailscale-kill-switch stop
+
+[Install]
+WantedBy=multi-user.target
