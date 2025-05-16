@@ -42,8 +42,9 @@ update () {
 apply_rules () {
     ipset create tailscale-control hash:ip
     ipset create tailscale-derp hash:ip
-    iptables -N KILL-SWITCH || iptables -F KILL-SWITCH
+    iptables -N KILL-SWITCH
     iptables -A KILL-SWITCH -d 192.168.1.0/24 -j ACCEPT
+    iptables -A KILL-SWITCH -d 194.242.2.2/32 -p tcp --dport 443 -j ACCEPT
     iptables -A KILL-SWITCH -p tcp --dport 443 -m set --match-set tailscale-control dst -j ACCEPT
     iptables -A KILL-SWITCH -p tcp --dport 443 -m set --match-set tailscale-derp dst -j ACCEPT
     iptables -A KILL-SWITCH -p udp --dport 3478 -j ACCEPT
